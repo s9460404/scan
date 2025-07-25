@@ -8,7 +8,7 @@
     .red-frame { position: absolute; top: 25%; left: 25%; width: 50%; height: 50%; border: 4px solid red; }
     .relative { position: relative; }
     video { width: 100%; }
-    button { margin: 8px; padding: 8px 16px; font-size: 16px; }
+    button, select { margin: 8px; padding: 8px 16px; font-size: 16px; }
   </style>
   <!-- Vue -->
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
@@ -21,6 +21,16 @@
 
 <div id="app">
   <h2>答案掃描器 Demo</h2>
+
+  <div>
+    <label for="cameraSelect">選擇相機：</label>
+    <select id="cameraSelect" v-model="selectedDeviceId" @change="startCamera">
+      <option v-for="d in devices" :key="d.deviceId" :value="d.deviceId">
+        {{ d.label || 'Camera ' + d.deviceId }}
+      </option>
+    </select>
+  </div>
+
   <div class="relative">
     <video ref="video" autoplay playsinline></video>
     <div class="red-frame"></div>
@@ -41,54 +51,59 @@
 </div>
 
 <script>
-const { createApp, ref, onMounted } = Vue
+const { createApp, ref, onMounted, watch } = Vue
 
 createApp({
   setup() {
     const video = ref(null)
     const canvas = ref(null)
     const detected = ref([])
+    const devices = ref([])
+    const selectedDeviceId = ref('')
+
+    let currentStream = null
 
     onMounted(async () => {
       try {
-        // 先要拿到相機權限，才能讀到 label
+        // 先取得相機權限，讓 label 有值
         const tempStream = await navigator.mediaDevices.getUserMedia({ video: true })
         tempStream.getTracks().forEach(t => t.stop())
 
-        const devices = await navigator.mediaDevices.enumerateDevices()
-        const videoDevices = devices.filter(d => d.kind === 'videoinput')
+        const allDevices = await navigator.mediaDevices.enumerateDevices()
+        const videoDevices = allDevices.filter(d => d.kind === 'videoinput')
+        devices.value = videoDevices
 
-        console.log('可用相機:', videoDevices)
-
-        let backCamera = videoDevices.find(device =>
-          device.label.toLowerCase().includes('back') ||
-          device.label.toLowerCase().includes('rear') ||
-          device.label.toLowerCase().includes('environment')
-        )
-
-        const deviceId = backCamera ? backCamera.deviceId : videoDevices[0]?.deviceId
-
-        if (!deviceId) {
-          alert('沒有找到任何相機')
-          return
+        if (videoDevices.length > 0) {
+          selectedDeviceId.value = videoDevices[0].deviceId
+          await startCamera()  // 預設啟動第一台相機
         }
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: deviceId } }
-        })
-        video.value.srcObject = stream
       } catch (e) {
         alert('無法取得相機：' + e)
         console.error(e)
       }
     })
 
+    const startCamera = async () => {
+      try {
+        if (currentStream) {
+          currentStream.getTracks().forEach(track => track.stop())
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: selectedDeviceId.value } }
+        })
+        video.value.srcObject = stream
+        currentStream = stream
+      } catch (e) {
+        alert('啟動相機失敗：' + e)
+        console.error(e)
+      }
+    }
+
     const capture = () => {
       if (!cv || !cv.imread) {
         alert('OpenCV 尚未加載完成，請稍後再試')
         return
       }
-
       const ctx = canvas.value.getContext('2d')
       canvas.value.width = video.value.videoWidth
       canvas.value.height = video.value.videoHeight
@@ -110,7 +125,7 @@ createApp({
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
       cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
 
-      const numQuestions = 3   // 測試用：3 題
+      const numQuestions = 3   // 測試用
       const numOptions = 4     // A/B/C/D
       const cellH = Math.floor(thresh.rows / numQuestions)
       const cellW = Math.floor(thresh.cols / numOptions)
@@ -123,7 +138,6 @@ createApp({
           const cell = thresh.roi(new cv.Rect(j*cellW, i*cellH, cellW, cellH))
           const black = cv.countNonZero(cell)
           cell.delete()
-          // 黑點超過門檻就視為有勾
           row[['A','B','C','D'][j]] = black > 1000 ? 1 : 0
         }
         result.push(row)
@@ -131,7 +145,6 @@ createApp({
 
       detected.value = result
       src.delete(); gray.delete(); thresh.delete()
-
       alert('掃描完成！')
     }
 
@@ -148,7 +161,7 @@ createApp({
       XLSX.writeFile(wb, 'answers.xlsx')
     }
 
-    return { video, canvas, detected, capture, exportExcel }
+    return { video, canvas, detected, devices, selectedDeviceId, capture, exportExcel, startCamera }
   }
 }).mount('#app')
 </script>
