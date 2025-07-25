@@ -52,25 +52,44 @@ let video = document.getElementById('video');
 let canvas = document.getElementById('canvas');
 let cameraSelect = document.getElementById('cameraSelect');
 let detected = { value: [] };
+let currentStream = null;
 
+// 初始化：列出相機
 navigator.mediaDevices.enumerateDevices().then(devices => {
-  devices.filter(d => d.kind === 'videoinput').forEach((d,i)=>{
+  let cams = devices.filter(d => d.kind === 'videoinput')
+  cams.forEach((d,i)=>{
     let option = document.createElement('option');
     option.value = d.deviceId;
     option.text = d.label || `Camera ${i+1}`;
     cameraSelect.appendChild(option);
   });
+  // 預設找後鏡頭（名稱包含 back 或 rear）
+  let backCam = cams.find(d=> /back|rear/i.test(d.label));
+  if(backCam){
+    cameraSelect.value = backCam.deviceId;
+    startCamera(backCam.deviceId);
+  } else if(cams.length>0){
+    cameraSelect.value = cams[0].deviceId;
+    startCamera(cams[0].deviceId);
+  }
 });
 
 cameraSelect.onchange = () => startCamera(cameraSelect.value);
 
-function startCamera(deviceId){
-  navigator.mediaDevices.getUserMedia({ video: { deviceId: {exact: deviceId} } })
-  .then(stream => video.srcObject = stream);
+async function startCamera(deviceId){
+  if(currentStream){
+    currentStream.getTracks().forEach(t => t.stop());
+  }
+  try {
+    let stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: deviceId } }
+    });
+    video.srcObject = stream;
+    currentStream = stream;
+  } catch(e){
+    console.error('無法打開相機', e);
+  }
 }
-
-// 預設先開第一個相機
-cameraSelect.addEventListener('change', () => startCamera(cameraSelect.value));
 
 function capture(){
   let ctx = canvas.getContext('2d');
@@ -110,8 +129,8 @@ function processImage(imageData){
 
   const numBlocks = 4
   const questionsPerBlock = 25
-  const rowsPerBlock = 26  // 標題+25題
-  const colsPerBlock = 5   // 題號+ABCD
+  const rowsPerBlock = 26
+  const colsPerBlock = 5
 
   const blockW = Math.floor(thresh.cols / numBlocks)
   const blockH = thresh.rows
@@ -123,15 +142,12 @@ function processImage(imageData){
 
   for (let block = 0; block < numBlocks; block++) {
     const blockX = block * blockW
-
-    for (let i = 1; i < rowsPerBlock; i++) {  // 跳過標題行
+    for (let i = 1; i < rowsPerBlock; i++) {
       let qIndex = block * questionsPerBlock + i
       let row = { question: qIndex, A:0, B:0, C:0, D:0 }
-
-      for (let j = 1; j <= 4; j++) {  // 跳過題號欄
+      for (let j = 1; j <= 4; j++) {
         const x = Math.floor(blockX + j * cellW)
         const y = Math.floor(i * cellH)
-
         if (x+cellW <= thresh.cols && y+cellH <= thresh.rows) {
           const cell = thresh.roi(new cv.Rect(x, y, cellW, cellH))
           const whitePixels = cv.countNonZero(cell)
@@ -146,12 +162,12 @@ function processImage(imageData){
       result.push(row)
     }
   }
-
   detected.value = result
   console.log(result)
   alert('掃描完成！')
   src.delete(); gray.delete(); thresh.delete()
 }
 </script>
+
 </body>
 </html>
