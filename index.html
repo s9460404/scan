@@ -2,9 +2,9 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>答案掃描器 Demo</title>
+  <title>答案掃描器</title>
   <style>
-    body { font-family: sans-serif; max-width: 600px; margin: auto; text-align: center; }
+    body { font-family: sans-serif; max-width: 800px; margin: auto; text-align: center; }
     .red-frame { position: absolute; top: 25%; left: 25%; width: 50%; height: 50%; border: 4px solid red; }
     .relative { position: relative; }
     video { width: 100%; }
@@ -51,14 +51,24 @@
   </div>
 
   <div v-if="detected.length > 0">
-    <h3>偵測結果</h3>
-    <div v-for="row in detected" :key="row.question">
+    <h3>偵測結果 (前10題預覽)</h3>
+    <div v-for="row in detected.slice(0,10)" :key="row.question">
       第 {{ row.question }} 題：A={{row.A}} B={{row.B}} C={{row.C}} D={{row.D}}
     </div>
+    <p>... 共 {{detected.length}} 題</p>
   </div>
 </div>
 
 <script>
+// 等 OpenCV 載入完成再啟動 Vue
+Module = {
+  onRuntimeInitialized() {
+    console.log('OpenCV ready!')
+    startVue()
+  }
+}
+
+function startVue() {
 const { createApp, ref, onMounted } = Vue
 
 createApp({
@@ -138,12 +148,8 @@ createApp({
           canvas.value.width = img.width
           canvas.value.height = img.height
           ctx.drawImage(img, 0, 0)
-          const x = img.width * 0.25
-          const y = img.height * 0.25
-          const w = img.width * 0.5
-          const h = img.height * 0.5
-          const cropped = ctx.getImageData(x, y, w, h)
-          processImage(cropped)
+          const imageData = ctx.getImageData(0, 0, img.width, img.height)
+          processImage(imageData)
         }
         img.src = reader.result
       }
@@ -151,53 +157,42 @@ createApp({
     }
 
     const processImage = (imageData) => {
-	  let src = cv.matFromImageData(imageData)
-	  let gray = new cv.Mat()
-	  let thresh = new cv.Mat()
+      let src = cv.matFromImageData(imageData)
+      let gray = new cv.Mat()
+      let thresh = new cv.Mat()
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
+      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
 
-	  // 灰階 + 二值化
-	  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
-	  cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
+      const numQuestions = 100
+      const numOptions = 4
 
-	  // 這裡根據你的圖片：100 題，每題有4個選項
-	  const numQuestions = 100
-	  const numOptions = 4
+      const cellH = Math.floor(thresh.rows / 25)  // 每區25題
+      const cellW = Math.floor(thresh.cols / (4 * numOptions)) // 4區, 每區4選項
 
-	  // 先看整張圖片的高寬
-	  const cellH = Math.floor(thresh.rows / numQuestions)
-	  const cellW = Math.floor(thresh.cols / (numOptions * 4))  // 4區塊，每區4個選項
+      let result = []
 
-	  let result = []
+      for (let block = 0; block < 4; block++) {
+        for (let i = 0; i < 25; i++) {
+          let qIndex = block*25 + i + 1
+          let row = { question: qIndex, A:0, B:0, C:0, D:0 }
 
-	  // 每題實際在圖上的位置：圖片是 4 區塊，每區25題
-	  for (let block = 0; block < 4; block++) {
-		for (let i = 0; i < 25; i++) {
-		  let qIndex = block*25 + i + 1
-		  let row = { question: qIndex, A:0, B:0, C:0, D:0 }
+          for (let j = 0; j < numOptions; j++) {
+            const x = block * numOptions * cellW + j*cellW
+            const y = i * cellH
 
-		  for (let j = 0; j < numOptions; j++) {
-			// 橫向偏移
-			const x = block * numOptions * cellW + j*cellW
-			const y = i * cellH
+            const cell = thresh.roi(new cv.Rect(x, y, cellW, cellH))
+            const whitePixels = cv.countNonZero(cell)
+            row[['A','B','C','D'][j]] = whitePixels > 500 ? 1 : 0
+            cell.delete()
+          }
+          result.push(row)
+        }
+      }
 
-			const cell = thresh.roi(new cv.Rect(x, y, cellW, cellH))
-			const whitePixels = cv.countNonZero(cell) // 因為反相，黑筆=白點
-
-			// 這裡門檻先設500，可再微調
-			row[['A','B','C','D'][j]] = whitePixels > 500 ? 1 : 0
-
-			cell.delete()
-		  }
-
-		  result.push(row)
-		}
-	  }
-
-	  detected.value = result
-	  src.delete(); gray.delete(); thresh.delete()
-	  alert('掃描完成！')
-	}
-
+      detected.value = result
+      src.delete(); gray.delete(); thresh.delete()
+      alert('掃描完成！')
+    }
 
     const exportExcel = () => {
       if (detected.value.length === 0) {
@@ -215,6 +210,7 @@ createApp({
     return { video, canvas, detected, devices, selectedDeviceId, uploadedImage, capture, handleFile, exportExcel, startCamera }
   }
 }).mount('#app')
+}
 </script>
 
 </body>
