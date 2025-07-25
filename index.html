@@ -49,7 +49,7 @@ createApp({
     onMounted(async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-		  video: { facingMode: { exact: "environment" } }
+		  video: { facingMode: "environment" }
 		})
         video.value.srcObject = stream
       } catch (e) {
