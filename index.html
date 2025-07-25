@@ -165,14 +165,15 @@ createApp({
 
 	  const numBlocks = 4
 	  const questionsPerBlock = 25
-	  const rowsPerBlock = 26  // 標題 + 25題
-	  const colsPerBlock = 5   // 題號 + ABCD
+	  const rowsPerBlock = 26  // 標題+25題
+	  const colsPerBlock = 5   // 題號+ABCD
 
 	  const blockW = Math.floor(thresh.cols / numBlocks)
 	  const blockH = thresh.rows
 
-	  const cellH = Math.floor(blockH / rowsPerBlock)
-	  const cellW = Math.floor(blockW / colsPerBlock)
+	  // 預留空間避免超出
+	  const cellH = Math.floor(blockH / rowsPerBlock) * 0.98
+	  const cellW = Math.floor(blockW / colsPerBlock) * 0.98
 
 	  let result = []
 
@@ -184,8 +185,8 @@ createApp({
 		  let row = { question: qIndex, A:0, B:0, C:0, D:0 }
 
 		  for (let j = 1; j <= 4; j++) {  // 跳過題號欄
-			const x = blockX + j * cellW
-			const y = i * cellH
+			const x = Math.floor(blockX + j * cellW)
+			const y = Math.floor(i * cellH)
 
 			// 確認沒超出範圍
 			if (x+cellW <= thresh.cols && y+cellH <= thresh.rows) {
@@ -193,9 +194,8 @@ createApp({
 			  const whitePixels = cv.countNonZero(cell)
 
 			  console.log(`Q${qIndex} [${['A','B','C','D'][j-1]}]: whitePixels=${whitePixels}`)
-			  
-			  // 門檻提高一點
-			  row[['A','B','C','D'][j-1]] = whitePixels > 1500 ? 1 : 0
+
+			  row[['A','B','C','D'][j-1]] = whitePixels > 800 ? 1 : 0
 			  cell.delete()
 			} else {
 			  console.warn(`跳過超出範圍 Q${qIndex} col ${j}`)
@@ -210,6 +210,7 @@ createApp({
 	  src.delete(); gray.delete(); thresh.delete()
 	  alert('掃描完成！')
 	}
+
 
 
 
