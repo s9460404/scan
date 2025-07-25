@@ -157,42 +157,51 @@ createApp({
     }
 
     const processImage = (imageData) => {
-      let src = cv.matFromImageData(imageData)
-      let gray = new cv.Mat()
-      let thresh = new cv.Mat()
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
-      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
+	  let src = cv.matFromImageData(imageData)
+	  let gray = new cv.Mat()
+	  let thresh = new cv.Mat()
+	  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
+	  cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
 
-      const numQuestions = 100
-      const numOptions = 4
+	  const numBlocks = 4           // 4區塊
+	  const questionsPerBlock = 25  // 每區25題
+	  const rowsPerBlock = 26       // 每區有26行(含1行標題)
+	  const colsPerBlock = 5        // 每區5列(題號+ABCD)
 
-      const cellH = Math.floor(thresh.rows / 25)  // 每區25題
-      const cellW = Math.floor(thresh.cols / (4 * numOptions)) // 4區, 每區4選項
+	  const blockW = Math.floor(thresh.cols / numBlocks)
+	  const blockH = thresh.rows
 
-      let result = []
+	  const cellH = Math.floor(blockH / rowsPerBlock)
+	  const cellW = Math.floor(blockW / colsPerBlock)
 
-      for (let block = 0; block < 4; block++) {
-        for (let i = 0; i < 25; i++) {
-          let qIndex = block*25 + i + 1
-          let row = { question: qIndex, A:0, B:0, C:0, D:0 }
+	  let result = []
 
-          for (let j = 0; j < numOptions; j++) {
-            const x = block * numOptions * cellW + j*cellW
-            const y = i * cellH
+	  for (let block = 0; block < numBlocks; block++) {
+		const blockX = block * blockW
 
-            const cell = thresh.roi(new cv.Rect(x, y, cellW, cellH))
-            const whitePixels = cv.countNonZero(cell)
-            row[['A','B','C','D'][j]] = whitePixels > 500 ? 1 : 0
-            cell.delete()
-          }
-          result.push(row)
-        }
-      }
+		for (let i = 1; i < rowsPerBlock; i++) {  // 從第2行開始(跳過標題)
+		  let qIndex = block * questionsPerBlock + i
+		  let row = { question: qIndex, A:0, B:0, C:0, D:0 }
 
-      detected.value = result
-      src.delete(); gray.delete(); thresh.delete()
-      alert('掃描完成！')
-    }
+		  for (let j = 1; j <= 4; j++) {  // 從第2列開始(跳過題號欄)
+			const x = blockX + j * cellW
+			const y = i * cellH
+
+			const cell = thresh.roi(new cv.Rect(x, y, cellW, cellH))
+			const whitePixels = cv.countNonZero(cell)
+			row[['A','B','C','D'][j-1]] = whitePixels > 500 ? 1 : 0
+			cell.delete()
+		  }
+
+		  result.push(row)
+		}
+	  }
+
+	  detected.value = result
+	  src.delete(); gray.delete(); thresh.delete()
+	  alert('掃描完成！')
+	}
+
 
     const exportExcel = () => {
       if (detected.value.length === 0) {
