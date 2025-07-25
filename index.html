@@ -151,34 +151,53 @@ createApp({
     }
 
     const processImage = (imageData) => {
-      let src = cv.matFromImageData(imageData)
-      let gray = new cv.Mat()
-      let thresh = new cv.Mat()
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
-      cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
+	  let src = cv.matFromImageData(imageData)
+	  let gray = new cv.Mat()
+	  let thresh = new cv.Mat()
 
-      const numQuestions = 3
-      const numOptions = 4
-      const cellH = Math.floor(thresh.rows / numQuestions)
-      const cellW = Math.floor(thresh.cols / numOptions)
+	  // 灰階 + 二值化
+	  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
+	  cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
 
-      let result = []
+	  // 這裡根據你的圖片：100 題，每題有4個選項
+	  const numQuestions = 100
+	  const numOptions = 4
 
-      for (let i = 0; i < numQuestions; i++) {
-        let row = { question: i+1, A:0, B:0, C:0, D:0 }
-        for (let j = 0; j < numOptions; j++) {
-          const cell = thresh.roi(new cv.Rect(j*cellW, i*cellH, cellW, cellH))
-          const black = cv.countNonZero(cell)
-          cell.delete()
-          row[['A','B','C','D'][j]] = black > 1000 ? 1 : 0
-        }
-        result.push(row)
-      }
+	  // 先看整張圖片的高寬
+	  const cellH = Math.floor(thresh.rows / numQuestions)
+	  const cellW = Math.floor(thresh.cols / (numOptions * 4))  // 4區塊，每區4個選項
 
-      detected.value = result
-      src.delete(); gray.delete(); thresh.delete()
-      alert('掃描完成！')
-    }
+	  let result = []
+
+	  // 每題實際在圖上的位置：圖片是 4 區塊，每區25題
+	  for (let block = 0; block < 4; block++) {
+		for (let i = 0; i < 25; i++) {
+		  let qIndex = block*25 + i + 1
+		  let row = { question: qIndex, A:0, B:0, C:0, D:0 }
+
+		  for (let j = 0; j < numOptions; j++) {
+			// 橫向偏移
+			const x = block * numOptions * cellW + j*cellW
+			const y = i * cellH
+
+			const cell = thresh.roi(new cv.Rect(x, y, cellW, cellH))
+			const whitePixels = cv.countNonZero(cell) // 因為反相，黑筆=白點
+
+			// 這裡門檻先設500，可再微調
+			row[['A','B','C','D'][j]] = whitePixels > 500 ? 1 : 0
+
+			cell.delete()
+		  }
+
+		  result.push(row)
+		}
+	  }
+
+	  detected.value = result
+	  src.delete(); gray.delete(); thresh.delete()
+	  alert('掃描完成！')
+	}
+
 
     const exportExcel = () => {
       if (detected.value.length === 0) {
