@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>答案掃描器</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: auto; text-align: center; }
+    .red-frame { position: absolute; top: 25%; left: 25%; width: 50%; height: 50%; border: 4px solid red; }
+    .relative { position: relative; }
+    video { width: 100%; }
+    button, select, input[type="file"] { margin: 8px; padding: 8px 16px; font-size: 16px; }
+    img.preview { max-width: 100%; margin-top: 8px; }
+  </style>
+  <!-- Vue -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- SheetJS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- OpenCV.js -->
+  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+  <!-- Tesseract.js -->
+  <script src="https://unpkg.com/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+</head>
+<body>
+
+<div id="app">
+  <h2>答案掃描器 Demo</h2>
+
+  <div>
+    <label for="cameraSelect">選擇相機：</label>
+    <select id="cameraSelect" v-model="selectedDeviceId" @change="startCamera">
+      <option v-for="d in devices" :key="d.deviceId" :value="d.deviceId">
+        {{ d.label || 'Camera ' + d.deviceId }}
+      </option>
+    </select>
+  </div>
+
+  <div class="relative">
+    <video ref="video" autoplay playsinline></video>
+    <div class="red-frame"></div>
+  </div>
+
+  <canvas ref="canvas" style="display: none;"></canvas>
+
+  <div>
+    <button @click="capture">開始掃描（相機）</button>
+    <input type="file" accept="image/*" @change="handleFile">
+    <button @click="exportExcel">匯出 Excel</button>
+  </div>
+
+<img id="template1" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAkACQAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCABGAF0DASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9/KKKKACiiigAopC2DTZJQqZyPWgB9FMjcOxwQdpwfY/5xT6ACiiigAooooAKKKKACkfpS01zgUAfLH/BWb/gqh4J/wCCTn7OcPjjxdpupa9faxdnTNC0azwh1G82NIFkmOVhiUKS8m1yo+6jkhT/ADS/8FDv+C3f7Wf7W3jTSvGWr+KfHPwp8G6utxJ4W0rwvd3ui6VPAkgSR0uFZTfSIy7WlZmCuCEEanYP6p/2pf2I/hV+2nB4Yt/ip4L0vxtZeEdS/tbS7XUfMe2hufLZN8kQYRzJtYgxyo6E4JXKgj8Hf+D1zSrbQfjt8ArKzt4LK1tvDWoRw20MYjit0WeFQqAAAJhcAADoexFAH6tf8G33xJ8Q/F//AII1/B/xH4q13W/E2u6iNZFxqmr30l9eXQj1zUIk8yaQl22oiqATwqgV9yV8Af8ABrn/AMoKPgZ/3Hv/AFINSr7/AKACiiigAooooAKKKKACiikbpQAE81/OZ/we9f8AJx/wH/7FrUv/AEqir9Xv+C3v/BWC5/4JEfs6+F/HVt4Ig8eyeI/EiaD9gl1T+zljBtriff5gikyR5IAGDndX83P/AAWh/wCCxd3/AMFhviD4I1+88CWvgI+CrC509IrfVzqH2pZZlk3HMUWMbR25yfSgD+h3/g10OP8AghR8DP8AuPf+pBqdff8AX8u//BMb/g6W1D/gnD+xV4H+C9t8GrPxbaeEWvQdYfxGbSSf7TqFxeH9wLZxlftG0fOc461/UBYhtnzjDEDIByF9gcDIHPagCxRRRQAUUUUAFFFFABTZOn406igDmfib8J/DPxi0aLS/FvhrQvFOlxTC4W01axivIEkAKiQJIrLuAZhn0Y+tcPa/sI/BADafgz8Kl24+UeErEDOB0HlY9K9eooA8mh/YY+C2n3Uc9v8ACD4XQzRHcskfhSwV1PbB8rPvx3Ar1KzjMeQc/UgAn8uPb8Pep6KACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//9k=" style="display: none;">
+  <div v-if="uploadedImage">
+    <h3>上傳圖片預覽</h3>
+    <img :src="uploadedImage" class="preview">
+  </div>
+
+  <div v-if="detected.length > 0">
+    <h3>偵測結果 (前10題預覽)</h3>
+    <div v-for="row in detected.slice(0,10)" :key="row.question">
+      第 {{ row.question }} 題：A={{row.A}} B={{row.B}} C={{row.C}} D={{row.D}}
+    </div>
+    <p>... 共 {{detected.length}} 題</p>
+  </div>
+</div>
+
+<script>
+Module = {
+  onRuntimeInitialized() {
+    console.log('OpenCV ready!')
+    startVue()
+  }
+}
+
+function startVue() {
+  const { createApp, ref, onMounted } = Vue
+
+  createApp({
+    setup() {
+      const video = ref(null)
+      const canvas = ref(null)
+      const detected = ref([])
+      const devices = ref([])
+      const selectedDeviceId = ref('')
+      const uploadedImage = ref(null)
+      let currentStream = null
+
+      onMounted(async () => {
+        try {
+          const tempStream = await navigator.mediaDevices.getUserMedia({ video: true })
+          tempStream.getTracks().forEach(t => t.stop())
+          const allDevices = await navigator.mediaDevices.enumerateDevices()
+          const videoDevices = allDevices.filter(d => d.kind === 'videoinput')
+          devices.value = videoDevices
+          if (videoDevices.length > 0) {
+            selectedDeviceId.value = videoDevices[0].deviceId
+            await startCamera()
+          }
+        } catch (e) {
+          alert('無法取得相機：' + e)
+          console.error(e)
+        }
+      })
+
+      const startCamera = async () => {
+        try {
+          if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop())
+          }
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: selectedDeviceId.value } }
+          })
+          video.value.srcObject = stream
+          currentStream = stream
+        } catch (e) {
+          alert('啟動相機失敗：' + e)
+          console.error(e)
+        }
+      }
+
+      const capture = () => {
+        const ctx = canvas.value.getContext('2d')
+        canvas.value.width = video.value.videoWidth
+        canvas.value.height = video.value.videoHeight
+        ctx.drawImage(video.value, 0, 0)
+        const x = canvas.value.width * 0.25
+        const y = canvas.value.height * 0.25
+        const w = canvas.value.width * 0.5
+        const h = canvas.value.height * 0.5
+        const cropped = ctx.getImageData(x, y, w, h)
+        processImage(cropped)
+      }
+
+      const handleFile = (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        const reader = new FileReader()
+        reader.onload = () => {
+          uploadedImage.value = reader.result
+          const img = new Image()
+          img.onload = () => {
+            const ctx = canvas.value.getContext('2d')
+            canvas.value.width = img.width
+            canvas.value.height = img.height
+            ctx.drawImage(img, 0, 0)
+            const imageData = ctx.getImageData(0, 0, img.width, img.height)
+            processImage(imageData)
+          }
+          img.src = reader.result
+        }
+        reader.readAsDataURL(file)
+      }
+
+      const processImage = (imageData) => {
+  let src = cv.matFromImageData(imageData)
+  let gray = new cv.Mat()
+  let thresh = new cv.Mat()
+  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
+  cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
+
+  const numBlocks = 4
+  const questionsPerBlock = 25
+  const rowsPerBlock = 26
+  const colsPerBlock = 5
+
+  const blockW = Math.floor(thresh.cols / numBlocks)
+  const blockH = thresh.rows
+  const cellH = Math.floor(blockH / rowsPerBlock) * 0.98
+  const cellW = Math.floor(blockW / colsPerBlock) * 0.98
+
+  let result = []
+
+  const ctx = canvas.value.getContext('2d')
+  ctx.clearRect(0, 0, canvas.value.width, canvas.value.height)
+  ctx.drawImage(canvas.value, 0, 0)
+  ctx.strokeStyle = 'red'
+  ctx.lineWidth = 2
+  ctx.font = '16px sans-serif'
+  ctx.fillStyle = 'red'
+
+  for (let block = 0; block < numBlocks; block++) {
+    const blockX = block * blockW
+
+    for (let i = 1; i < rowsPerBlock; i++) {
+      let qIndex = block * questionsPerBlock + i
+      let row = { question: qIndex, A:0, B:0, C:0, D:0 }
+
+      for (let j = 1; j <= 4; j++) {
+        const x = Math.floor(blockX + j * cellW)
+        const y = Math.floor(i * cellH)
+
+        if (x+cellW <= thresh.cols && y+cellH <= thresh.rows) {
+          const cell = thresh.roi(new cv.Rect(x, y, cellW, cellH))
+          const whitePixels = cv.countNonZero(cell)
+          row[['A','B','C','D'][j-1]] = whitePixels > 700 ? 1 : 0
+          cell.delete()
+
+          // 🔴 畫出紅色框
+          ctx.strokeRect(x, y, cellW, cellH)
+        }
+      }
+
+      result.push(row)
+    }
+  }
+
+  detected.value = result
+
+  // ========== ✅ 模板比對（尋找數字1） ==========
+
+  const templateImg = document.getElementById('template1')
+  if (templateImg.complete) {
+    const templateCanvas = document.createElement('canvas')
+    const tctx = templateCanvas.getContext('2d')
+    templateCanvas.width = templateImg.width
+    templateCanvas.height = templateImg.height
+    tctx.drawImage(templateImg, 0, 0)
+
+    const templSrc = cv.imread(templateCanvas)
+    cv.cvtColor(templSrc, templSrc, cv.COLOR_RGBA2GRAY)
+
+    const searchGray = new cv.Mat()
+    cv.cvtColor(src, searchGray, cv.COLOR_RGBA2GRAY)
+
+    const resultMat = new cv.Mat()
+    cv.matchTemplate(searchGray, templSrc, resultMat, cv.TM_CCOEFF_NORMED)
+
+    let minMax = cv.minMaxLoc(resultMat)
+    const maxVal = minMax.maxVal
+    const maxLoc = minMax.maxLoc
+
+    console.log('模板相似度', maxVal, '位置', maxLoc)
+
+    if (maxVal >= 0.8) {
+      const pt = maxLoc
+      const w = templSrc.cols
+      const h = templSrc.rows
+
+      // 在 canvas 上畫圈
+      ctx.strokeStyle = 'blue'
+      ctx.lineWidth = 3
+      ctx.strokeRect(pt.x, pt.y, w, h)
+      ctx.fillText('題號1', pt.x, pt.y - 5)
+    } else {
+      console.warn('未找到題號1，相似度不足')
+    }
+
+    templSrc.delete()
+    searchGray.delete()
+    resultMat.delete()
+  } else {
+    console.warn('template1 尚未載入完成')
+  }
+
+  uploadedImage.value = canvas.value.toDataURL()
+
+  // 清除資源
+  src.delete(); gray.delete(); thresh.delete()
+}
+
+
+
+      const exportExcel = () => {
+        if (detected.value.length === 0) {
+          alert('請先掃描！')
+          return
+        }
+        const data = [['題號','A','B','C','D']]
+        detected.value.forEach(r => data.push([r.question, r.A, r.B, r.C, r.D]))
+        const ws = XLSX.utils.aoa_to_sheet(data)
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, 'Answers')
+        XLSX.writeFile(wb, 'answers.xlsx')
+      }
+
+      return { video, canvas, detected, devices, selectedDeviceId, uploadedImage, capture, handleFile, exportExcel, startCamera }
+    }
+  }).mount('#app')
+}
+</script>
+
+</body>
+</html>

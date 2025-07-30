@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>答案掃描器</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: auto; text-align: center; }
+    .red-frame { position: absolute; top: 25%; left: 25%; width: 50%; height: 50%; border: 4px solid red; }
+    .relative { position: relative; }
+    video { width: 100%; }
+    button, select, input[type="file"] { margin: 8px; padding: 8px 16px; font-size: 16px; }
+    img.preview { max-width: 100%; margin-top: 8px; }
+    canvas { max-width: 100%; margin-top: 8px; border: 1px solid #ccc; }
+  </style>
+  <!-- Vue -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- SheetJS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- OpenCV.js -->
+  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+</head>
+<body>
+
+<div id="app">
+  <h2>答案掃描器 Demo</h2>
+
+  <!-- 將canvas改成顯示，方便看到紅框 -->
+  <canvas ref="canvas"></canvas>
+
+  <div>
+    <!--<button @click="capture">開始掃描（相機）</button>-->
+    <input type="file" accept="image/*" @change="handleFile">
+	<select v-model="exportMode">
+	  <option value="both">雙重成立</option>
+	  <option value="pixel">像素差異法</option>
+	  <option value="template">模板比對法</option>
+	</select>
+    <button @click="exportExcel">匯出 Excel</button>
+  </div>
+
+<img id="templateImg" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAkACQAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCABGAF0DASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9/KKKKACiiigAopC2DTZJQqZyPWgB9FMjcOxwQdpwfY/5xT6ACiiigAooooAKKKKACkfpS01zgUAfLH/BWb/gqh4J/wCCTn7OcPjjxdpupa9faxdnTNC0azwh1G82NIFkmOVhiUKS8m1yo+6jkhT/ADS/8FDv+C3f7Wf7W3jTSvGWr+KfHPwp8G6utxJ4W0rwvd3ui6VPAkgSR0uFZTfSIy7WlZmCuCEEanYP6p/2pf2I/hV+2nB4Yt/ip4L0vxtZeEdS/tbS7XUfMe2hufLZN8kQYRzJtYgxyo6E4JXKgj8Hf+D1zSrbQfjt8ArKzt4LK1tvDWoRw20MYjit0WeFQqAAAJhcAADoexFAH6tf8G33xJ8Q/F//AII1/B/xH4q13W/E2u6iNZFxqmr30l9eXQj1zUIk8yaQl22oiqATwqgV9yV8Af8ABrn/AMoKPgZ/3Hv/AFINSr7/AKACiiigAooooAKKKKACiikbpQAE81/OZ/we9f8AJx/wH/7FrUv/AEqir9Xv+C3v/BWC5/4JEfs6+F/HVt4Ig8eyeI/EiaD9gl1T+zljBtriff5gikyR5IAGDndX83P/AAWh/wCCxd3/AMFhviD4I1+88CWvgI+CrC509IrfVzqH2pZZlk3HMUWMbR25yfSgD+h3/g10OP8AghR8DP8AuPf+pBqdff8AX8u//BMb/g6W1D/gnD+xV4H+C9t8GrPxbaeEWvQdYfxGbSSf7TqFxeH9wLZxlftG0fOc461/UBYhtnzjDEDIByF9gcDIHPagCxRRRQAUUUUAFFFFABTZOn406igDmfib8J/DPxi0aLS/FvhrQvFOlxTC4W01axivIEkAKiQJIrLuAZhn0Y+tcPa/sI/BADafgz8Kl24+UeErEDOB0HlY9K9eooA8mh/YY+C2n3Uc9v8ACD4XQzRHcskfhSwV1PbB8rPvx3Ar1KzjMeQc/UgAn8uPb8Pep6KACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//9k=" style="display: none;">
+<!--<img id="nullImg" style="display: none;" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAkACQAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCABZAF8DASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9/BxRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFAH/2Q==">
+-->
+<img id="nullImg" style="display: none;" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAkACQAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCABCAEwDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9/KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/2Q==">
+ <!--<img id="nullImg" style="display: none;" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAkACQAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCAAnAC0DASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9/KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//Z">
+   -->
+  <div v-if="uploadedImage">
+    <h3>上傳圖片預覽</h3>
+    <img :src="uploadedImage" class="preview">
+  </div>
+
+  <!--<div v-if="detected.length > 0">
+    <h3>偵測結果 (前10題預覽)</h3>
+    <div v-for="row in detected.slice(0,10)" :key="row.question">
+      第 {{ row.question }} 題：A={{row.A}} B={{row.B}} C={{row.C}} D={{row.D}}
+    </div>
+    <p>... 共 {{detected.length}} 題</p>
+  </div>-->
+</div>
+
+<script>
+// 等 OpenCV 載入完成再啟動 Vue
+Module = {
+  onRuntimeInitialized() {
+    console.log('OpenCV ready!')
+    startVue()
+  }
+}
+
+function startVue() {
+const { createApp, ref, onMounted } = Vue
+
+createApp({
+  setup() {
+    const video = ref(null)
+    const canvas = ref(null)
+    const detected_pixel = ref([])
+	const detected_template = ref([])
+    const devices = ref([])
+    const selectedDeviceId = ref('')
+    const uploadedImage = ref(null)
+	const exportMode = ref('both') // 預設為雙重成立
+
+    let currentStream = null
+
+    const handleFile = (e) => {
+      const file = e.target.files[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        uploadedImage.value = reader.result
+        const img = new Image()
+        img.onload = () => {
+          const ctx = canvas.value.getContext('2d')
+          canvas.value.width = img.width
+          canvas.value.height = img.height
+          ctx.drawImage(img, 0, 0)
+          const imageData = ctx.getImageData(0, 0, img.width, img.height)
+          processImage(imageData)
+        }
+        img.src = reader.result
+      }
+      reader.readAsDataURL(file)
+    }
+
+/*
+function deskewAndCropImage(src) {
+  let gray = new cv.Mat();
+  let binary = new cv.Mat();
+  let contours = new cv.MatVector();
+  let hierarchy = new cv.Mat();
+
+  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+  cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+
+  cv.findContours(binary, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+  let maxContour = null;
+  let maxArea = 0;
+  for (let i = 0; i < contours.size(); i++) {
+    let cnt = contours.get(i);
+    let area = cv.contourArea(cnt);
+    if (area > maxArea) {
+      maxArea = area;
+      maxContour = cnt;
+    }
+  }
+
+  if (!maxContour || maxContour.rows < 5) {
+    console.warn('⚠️ 找不到最大輪廓');
+    gray.delete(); binary.delete(); contours.delete(); hierarchy.delete();
+    return src.clone();
+  }
+
+  // 先用旋轉矩形取得角度
+  let rotatedRect = cv.minAreaRect(maxContour);
+  let angle = rotatedRect.angle;
+  if (rotatedRect.size.width < rotatedRect.size.height) {
+    angle += 90;
+  }
+
+  // 旋轉整張圖片，使表格回正
+  let center = new cv.Point(src.cols / 2, src.rows / 2);
+  let M_rotate = cv.getRotationMatrix2D(center, angle, 1);
+  let rotated = new cv.Mat();
+  cv.warpAffine(src, rotated, M_rotate, new cv.Size(src.cols, src.rows), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255,255,255,255));
+
+  // 旋轉後再做灰階二值化，找最大輪廓並裁切
+  let gray2 = new cv.Mat();
+  let binary2 = new cv.Mat();
+  let contours2 = new cv.MatVector();
+  let hierarchy2 = new cv.Mat();
+
+  cv.cvtColor(rotated, gray2, cv.COLOR_RGBA2GRAY);
+  cv.threshold(gray2, binary2, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+  cv.findContours(binary2, contours2, hierarchy2, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+  let maxContour2 = null;
+  let maxArea2 = 0;
+  for (let i = 0; i < contours2.size(); i++) {
+    let cnt = contours2.get(i);
+    let area = cv.contourArea(cnt);
+    if (area > maxArea2) {
+      maxArea2 = area;
+      maxContour2 = cnt;
+    }
+  }
+
+  if (!maxContour2 || maxContour2.rows < 5) {
+    console.warn('⚠️ 旋轉後找不到最大輪廓');
+    // 釋放資源
+    gray.delete(); binary.delete(); contours.delete(); hierarchy.delete();
+    gray2.delete(); binary2.delete(); contours2.delete(); hierarchy2.delete();
+    M_rotate.delete();
+    return rotated.clone();
+  }
+
+  // 用 boundingRect 裁切
+  let rect = cv.boundingRect(maxContour2);
+  let cropped = rotated.roi(rect);
+
+  // 釋放資源
+  gray.delete(); binary.delete(); contours.delete(); hierarchy.delete();
+  gray2.delete(); binary2.delete(); contours2.delete(); hierarchy2.delete();
+  M_rotate.delete();
+
+  return cropped.clone();
+}
+
+
+
+function sortVertices(pts) {
+  // 求出質心
+  let center = pts.reduce((acc, pt) => ({ x: acc.x + pt.x, y: acc.y + pt.y }), { x: 0, y: 0 })
+  center.x /= pts.length
+  center.y /= pts.length
+
+  // 分別根據角度進行排序：top-left → top-right → bottom-right → bottom-left
+  return pts.sort((a, b) => {
+    let angleA = Math.atan2(a.y - center.y, a.x - center.x)
+    let angleB = Math.atan2(b.y - center.y, b.x - center.x)
+    return angleA - angleB
+  })
+}
+*/
+
+
+function deskewAndCropImage(src) {
+  let gray = new cv.Mat();
+  let binary = new cv.Mat();
+  let contours = new cv.MatVector();
+  let hierarchy = new cv.Mat();
+
+  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+  cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+  cv.findContours(binary, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+  let maxContour = null;
+  let maxArea = 0;
+  for (let i = 0; i < contours.size(); i++) {
+    let cnt = contours.get(i);
+    let area = cv.contourArea(cnt);
+    if (area > maxArea) {
+      maxArea = area;
+      maxContour = cnt;
+    }
+  }
+
+  if (!maxContour || maxContour.rows < 5) {
+    console.warn('⚠️ 找不到最大輪廓');
+    gray.delete(); binary.delete(); contours.delete(); hierarchy.delete();
+    return src.clone();
+  }
+
+  // 取得旋轉矩形與4點座標
+  let rotatedRect = cv.minAreaRect(maxContour);
+  let vertices = getRotatedRectPoints(rotatedRect); // 回傳 cv.Point[4]，順時針
+
+  // 目標寬高（使用長邊為寬）
+  let width = Math.round(Math.hypot(vertices[0].x - vertices[1].x, vertices[0].y - vertices[1].y));
+  let height = Math.round(Math.hypot(vertices[1].x - vertices[2].x, vertices[1].y - vertices[2].y));
+
+  // 源點（目前圖上的4個點）打包成一個符合 OpenCV 格式的浮點數座標陣列
+  let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    vertices[0].x, vertices[0].y,
+    vertices[1].x, vertices[1].y,
+    vertices[2].x, vertices[2].y,
+    vertices[3].x, vertices[3].y
+  ]);
+
+  // 目標點（轉成水平的矩形）目標矩陣 矩形的左上一定是0 0然後依長寬找出 新矩形4點座標
+  let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    0, 0,
+    width, 0,
+    width, height,
+    0, height
+  ]);
+
+  let M = cv.getPerspectiveTransform(srcTri, dstTri); //取得轉換公式
+  let dst = new cv.Mat();
+  //M 是剛才算出來的透視變換矩陣 
+  //new cv.Size(width, height) 是你要輸出的圖像大小
+  //cv.warpPerspective 會根據矩陣 M，從原圖 src 擷取並「校正拉伸」出一張新的圖 dst，這張圖就是「答案表格的正向矩形區域」
+  cv.warpPerspective(src, dst, M, new cv.Size(width, height), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255,255,255,255));
+
+  // 清理
+  gray.delete(); binary.delete(); contours.delete(); hierarchy.delete();
+  srcTri.delete(); dstTri.delete(); M.delete();
+
+  return dst; // ✅ 回傳擷取出來 + 已經轉正的答案表格
+}
+
+
+
+function getRotatedRectPoints(rotatedRect) {
+  let angleRad = rotatedRect.angle * Math.PI / 180.0;
+  let b = Math.cos(angleRad) * 0.5;
+  let a = Math.sin(angleRad) * 0.5;
+
+  let center = rotatedRect.center;
+  let size = rotatedRect.size;
+
+  let pt0 = new cv.Point(
+    center.x - a * size.height - b * size.width,
+    center.y + b * size.height - a * size.width
+  );
+  let pt1 = new cv.Point(
+    center.x + a * size.height - b * size.width,
+    center.y - b * size.height - a * size.width
+  );
+  let pt2 = new cv.Point(
+    2 * center.x - pt0.x,
+    2 * center.y - pt0.y
+  );
+  let pt3 = new cv.Point(
+    2 * center.x - pt1.x,
+    2 * center.y - pt1.y
+  );
+
+  return [pt0, pt1, pt2, pt3];
+}
+
+
+
+    const processImage = (imageData) => {
+	
+		let src = cv.matFromImageData(imageData)
+		// 🔍 STEP 1: 先畫出偵測到的紅框（確認表格有抓到）
+		  let preview = deskewAndCropImage(src);
+		  //cv.imshow(canvas.value, preview); // 顯示畫有紅框的圖
+		  src.delete();
+		  //preview.delete();
+
+		  //return; // 暫停流程，確認紅框對不對，再做後續動作
+		src = preview;
+		
+		
+		
+		
+		
+		//src.delete() // 原圖不再使用，釋放
+		//src = aligned
+
+
+		let gray = new cv.Mat()
+		let thresh = new cv.Mat()
+		cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
+		cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
+	
+	
+      //let src = cv.matFromImageData(imageData)
+      //let gray = new cv.Mat()
+      //let thresh = new cv.Mat()
+      //cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
+      //cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
+
+      const numBlocks = 4
+      const questionsPerBlock = 25
+      const rowsPerBlock = 26   // 含標題行
+      const colsPerBlock = 5    // 題號+ABCD
+
+      const blockW = Math.floor(thresh.cols / numBlocks)
+      const blockH = thresh.rows
+
+      const cellH = Math.floor(blockH / rowsPerBlock) * 1.005
+      const cellW = Math.floor(blockW / colsPerBlock) * 1
+
+      let result_pixel = []
+      let result_template = []
+
+      // 先清除canvas並畫原圖
+      const ctx = canvas.value.getContext('2d')
+      /*canvas.value.width = imageData.width
+      canvas.value.height = imageData.height
+      ctx.putImageData(imageData, 0, 0)*/
+	  canvas.value.width = src.cols
+		canvas.value.height = src.rows
+		cv.imshow(canvas.value, src)
+
+      // 設定紅線樣式
+      ctx.strokeStyle = 'red'
+        ctx.lineWidth = 2
+
+        for (let block = 0; block < numBlocks; block++) {
+          const blockX = block * blockW
+
+          // 跳過標題行，跑25行
+          for (let i = 1; i < rowsPerBlock; i++) {
+            let qIndex = block * questionsPerBlock + i
+            let row_pixel = { question: qIndex, A:0, B:0, C:0, D:0 }
+
+            for (let j = 1; j <= 4; j++) { // 跳過題號欄
+            const x = Math.floor(blockX + j * cellW)
+            const y = Math.floor(i * cellH)
+
+            // 畫紅框
+            ctx.strokeRect(x, y, cellW, cellH)
+
+            if (x + cellW <= thresh.cols && y + cellH <= thresh.rows) {
+              const cell = thresh.roi(new cv.Rect(x, y, cellW, cellH))
+              const whitePixels = cv.countNonZero(cell)
+              console.log(i,j,whitePixels,cellW,cellH);
+			  //一個cell裡大於多少比例的pixel
+			  var whitePixels_rate = whitePixels / (cellW * cellH);
+              //row_pixel[['A','B','C','D'][j-1]] = whitePixels > 550 ? 1 : 0
+			  row_pixel[['A','B','C','D'][j-1]] = whitePixels_rate > 0.1 ? 1 : 0
+              
+              cell.delete()
+            } else {
+              console.warn(`跳過超出範圍 Q${qIndex} col ${j}`)
+              row_pixel[['A','B','C','D'][j-1]] = 0
+            }
+            }
+            result_pixel.push(row_pixel)
+          }
+        }
+
+  // ------------ 題號1模板匹配區塊 ---------------
+  let templateMat = cv.imread(document.getElementById('templateImg'))
+  let templateGray = new cv.Mat()
+  cv.cvtColor(templateMat, templateGray, cv.COLOR_RGBA2GRAY)
+
+  let matchResultCols = gray.cols - templateGray.cols + 1
+  let matchResultRows = gray.rows - templateGray.rows + 1
+  let matchResult = new cv.Mat()
+  matchResult.create(matchResultRows, matchResultCols, cv.CV_32FC1)
+
+  cv.matchTemplate(gray, templateGray, matchResult, cv.TM_CCOEFF_NORMED)
+  let minMax = cv.minMaxLoc(matchResult)
+  let maxLoc = minMax.maxLoc
+  let maxVal = minMax.maxVal
+
+  if (maxVal > 0.7) {
+    ctx.strokeStyle = 'lime'
+    ctx.lineWidth = 3
+    ctx.strokeRect(maxLoc.x, maxLoc.y, templateGray.cols, templateGray.rows)
+  }
+
+  templateMat.delete()
+  templateGray.delete()
+  matchResult.delete()
+  // ------------ 模板匹配結束 ---------------------
+
+  // 讀取空白模板並灰階+二值化
+  let checktemplateMat = cv.imread(document.getElementById('nullImg'))
+  let checktemplateGray = new cv.Mat()
+  cv.cvtColor(checktemplateMat, checktemplateGray, cv.COLOR_RGBA2GRAY)
+  cv.threshold(checktemplateGray, checktemplateGray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
+
+  const diffThreshold = 600 // 差異小於這個值，視為空白格
+
+  // 主迴圈：走過所有格子
+  for (let block = 0; block < numBlocks; block++) {
+    const blockX = block * blockW
+    for (let i = 1; i < rowsPerBlock; i++) {
+      let qIndex = block * questionsPerBlock + i
+      let row_template = { question: qIndex, A: 0, B: 0, C: 0, D: 0 }
+
+      for (let j = 1; j <= 4; j++) {
+        const x = Math.floor(blockX + j * cellW)
+        const y = Math.floor(i * cellH)
+
+        ctx.strokeStyle = 'red'
+        ctx.lineWidth = 2
+        ctx.strokeRect(x, y, cellW, cellH)
+
+        if (x + cellW <= gray.cols && y + cellH <= gray.rows) {
+          const cellGray = gray.roi(new cv.Rect(x, y, cellW, cellH))
+          const cellBinary = new cv.Mat()
+          cv.threshold(cellGray, cellBinary, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
+
+          const resizedCell = new cv.Mat()
+          cv.resize(cellBinary, resizedCell, new cv.Size(checktemplateGray.cols, checktemplateGray.rows))
+
+          const diff = new cv.Mat()
+          cv.absdiff(resizedCell, checktemplateGray, diff)
+          const diffPixels = cv.countNonZero(diff)
+          //console.log(i, j, diffPixels);
+
+          if (diffPixels < diffThreshold) {
+            ctx.strokeStyle = 'lime'
+            ctx.lineWidth = 2
+            const offsetX = x + (cellW - checktemplateGray.cols) / 2
+            const offsetY = y + (cellH - checktemplateGray.rows) / 2
+            ctx.strokeRect(offsetX, offsetY, checktemplateGray.cols, checktemplateGray.rows)
+            row_template[['A', 'B', 'C', 'D'][j - 1]] = 0
+          } else {
+            row_template[['A', 'B', 'C', 'D'][j - 1]] = 1
+          }
+
+          cellGray.delete()
+          cellBinary.delete()
+          resizedCell.delete()
+          diff.delete()
+        } else {
+          console.warn(`跳過超出範圍 Q${qIndex} col ${j}`)
+          row_template[['A', 'B', 'C', 'D'][j - 1]] = 0
+        }
+      }
+      result_template.push(row_template)
+    }
+  }
+
+  checktemplateMat.delete()
+  checktemplateGray.delete()
+  detected_pixel.value = result_pixel
+  detected_template.value = result_template
+  src.delete()
+  gray.delete()
+  thresh.delete()
+  alert('掃描完成！')
+}
+
+	
+	const exportExcel = () => {
+  if (detected_pixel.value.length === 0 || detected_template.value.length === 0) {
+    alert('請先掃描！')
+    return
+  }
+
+  const data = [['題號','A','B','C','D']]
+  const ws = XLSX.utils.aoa_to_sheet(data)
+
+  for (let i = 0; i < detected_pixel.value.length; i++) {
+    const p = detected_pixel.value[i]
+    const t = detected_template.value[i]
+
+    let row = [p.question]
+    for (let opt of ['A','B','C','D']) {
+      let value = 0
+      let mismatch = false
+
+      if (exportMode.value === 'pixel') {
+        value = p[opt]
+      } else if (exportMode.value === 'template') {
+        value = t[opt]
+      } else if (exportMode.value === 'both') {
+        value = (p[opt] === 1 && t[opt] === 1) ? 1 : 0
+        mismatch = (p[opt] !== t[opt])
+      }
+
+      row.push(value)
+
+      // 標記
+      if (exportMode.value === 'both' && mismatch) {
+		  ws[cellAddress].v = value + '*'
+		}
+    }
+
+    XLSX.utils.sheet_add_aoa(ws, [row], { origin: -1 })
+  }
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Answers')
+  XLSX.writeFile(wb, 'answers.xlsx')
+}
+
+
+	return { video, canvas, detected_pixel, detected_template, uploadedImage, handleFile, exportExcel, exportMode }
+  }
+}).mount('#app')
+}
+</script>
+
+</body>
+</html>
